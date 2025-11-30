@@ -180,30 +180,6 @@
       // 2D label element
       const satLabelEl = document.getElementById("sat-label");
 
-      // --- Orbit path line ---
-      const orbitLineMaterial = new THREE.LineBasicMaterial({
-        color: 0x44aaff,
-        linewidth: 1,
-      });
-      const orbitLineGeometry = new THREE.BufferGeometry();
-      const orbitPoints = [];
-
-      const nowForOrbit = new Date();
-
-      // sample +/- 90 minutes around "now"
-      for (let i = -90; i <= 90; i++) {
-        const t = new Date(nowForOrbit.getTime() + i * 60 * 1000);
-        const p = propagateToEcf(t);
-        orbitPoints.push(p.x, p.y, p.z);
-      }
-
-      orbitLineGeometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(orbitPoints, 3)
-      );
-      const orbitLine = new THREE.Line(orbitLineGeometry, orbitLineMaterial);
-      scene.add(orbitLine);
-
       // --- Conversion: TLE -> ECF position at given date ---
       let lastSafePosition = new THREE.Vector3(0, 0, earthRadiusKm + 500);
 
@@ -237,6 +213,32 @@
         lastSafePosition = pos.clone();
         return pos;
       }
+
+      // --- Orbit path line (uses propagateToEcf, but is OUTSIDE the function) ---
+      const orbitLineMaterial = new THREE.LineBasicMaterial({
+        color: 0x44aaff,
+        linewidth: 1,
+      });
+      const orbitLineGeometry = new THREE.BufferGeometry();
+      const orbitPoints = [];
+
+      const nowForOrbit = new Date();
+
+      // sample +/- 90 minutes around "now"
+      for (let i = -90; i <= 90; i++) {
+        const t = new Date(nowForOrbit.getTime() + i * 60 * 1000);
+        const p = propagateToEcf(t);
+        orbitPoints.push(p.x, p.y, p.z);
+      }
+
+      orbitLineGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(orbitPoints, 3)
+      );
+      
+      const orbitLine = new THREE.Line(orbitLineGeometry, orbitLineMaterial);
+      scene.add(orbitLine);
+
 
       // --- Animation loop ---
       function animate() {
