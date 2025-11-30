@@ -52,13 +52,37 @@
       #sat-label {
         position: fixed;
         transform: translate(-50%, -50%);
+        display: flex;
+        align-items: center;
+        gap: 6px;
         pointer-events: none;
-        color: #ffe9a0;
-        font-size: 12px;
+        color: #f4f7ff;
+        font-size: 16px;
         font-weight: 600;
         text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
         z-index: 11;
       }
+
+      #sat-label .icon {
+        font-size: 24px; /* size of the satellite emoji */
+      }
+
+      #sat-label .name {
+        letter-spacing: 0.06em;
+      }
+
+      #vignette {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          circle at center,
+          rgba(0, 0, 0, 0) 40%,
+          rgba(0, 0, 0, 0.8) 100%
+        );
+        z-index: 2;
+      }
+
     </style>
   </head>
   <body>
@@ -78,7 +102,11 @@
       </p>
     </div>
 
-    <div id="sat-label">🛰 6GSTARLAB</div>
+    <div id="sat-label">
+      <span class="icon">🛰</span>
+      <span class="name">6GSTARLAB</span>
+    </div>
+    <div id="vignette"></div>
 
     <!-- three.js (global THREE object) -->
     <script src="./three.min.js"></script>
@@ -130,10 +158,22 @@
       const earthMaterial = new THREE.MeshPhongMaterial({
         map: earthTexture,
         color: 0x9fc4ff, // slight bluish tint (SpaceX-style)
+        shininess: 18,
+        specular: 0x222222,
       });
 
       const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
       scene.add(earthMesh);
+
+      // Soft atmospheric glow
+      const glowGeometry = new THREE.SphereGeometry(earthRadiusKm * 1.02, 64, 64);
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x6fbfff,
+        transparent: true,
+        opacity: 0.16,
+      });
+      const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+      scene.add(glow);
 
       // --- Starfield background (approximate, not real constellations) ---
       const starRadius = earthRadiusKm * 18;
@@ -170,11 +210,12 @@
       scene.add(starField);
 
       // --- Satellite marker (small glowing sphere) ---
-      const satMarkerGeometry = new THREE.SphereGeometry(120, 16, 16);
+      const satMarkerGeometry = new THREE.SphereGeometry(80, 16, 16);
       const satMarkerMaterial = new THREE.MeshBasicMaterial({
         color: 0xffe066,
       });
       const satMarker = new THREE.Mesh(satMarkerGeometry, satMarkerMaterial);
+      satMarker.visible = false;
       scene.add(satMarker);
 
       // 2D label element
@@ -214,6 +255,10 @@
         return pos;
       }
 
+      let smoothedSatPos = new THREE.Vector3();
+      let firstFrame = true;
+      const cameraDistance = earthRadiusKm * 3.5; // tweak 2.5–3.5 for taste
+
       // --- Orbit path line (uses propagateToEcf, but is OUTSIDE the function) ---
       const orbitLineMaterial = new THREE.LineBasicMaterial({
         color: 0x44aaff,
@@ -235,7 +280,7 @@
         "position",
         new THREE.Float32BufferAttribute(orbitPoints, 3)
       );
-      
+
       const orbitLine = new THREE.Line(orbitLineGeometry, orbitLineMaterial);
       scene.add(orbitLine);
 
@@ -247,23 +292,32 @@
         const now = new Date();
         const satPos = propagateToEcf(now);
 
-        // Move satellite marker to true position
-        satMarker.position.copy(satPos);
+        if (firstFrame) {
+          smoothedSatPos.copy(satPos);
+          firstFrame = false;
+        } else {
+          // Lerp towards the true position for smooth motion
+          const smoothingFactor = 0.01; // 0.05 = very smooth, 0.3 = snappier
+          smoothedSatPos.lerp(satPos, smoothingFactor);
+        }
+
+        // Move the (hidden) marker so we still have a 3D point in the scene
+        satMarker.position.copy(smoothedSatPos);
 
         // Camera: stay on same radial line as satellite, but further out
-        const dir = satPos.clone().normalize();
-        const cameraDistance = earthRadiusKm * 3.0; // tweak 2.5–3.5 for taste
+        // Camera stays on same radial line, but further out
+        const dir = smoothedSatPos.clone().normalize();
         camera.position.copy(dir.multiplyScalar(cameraDistance));
         camera.up.set(0, 0, 1);
         camera.lookAt(0, 0, 0); // always look at Earth center
 
-        // Update 2D screen position of label
-        const projected = satMarker.position.clone().project(camera);
+        // Project smoothed position to 2D for the icon+label
+        const projected = smoothedSatPos.clone().project(camera);
         const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
         const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
 
         if (projected.z < 1) {
-          satLabelEl.style.display = "block";
+          satLabelEl.style.display = "flex";
           satLabelEl.style.left = `${x}px`;
           satLabelEl.style.top = `${y}px`;
         } else {
