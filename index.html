@@ -48,6 +48,17 @@
         padding: 2px 4px;
         border-radius: 4px;
       }
+
+      #sat-label {
+        position: fixed;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        color: #ffe9a0;
+        font-size: 12px;
+        font-weight: 600;
+        text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+        z-index: 11;
+      }
     </style>
   </head>
   <body>
@@ -67,106 +78,204 @@
       </p>
     </div>
 
+    <div id="sat-label">🛰 6GSTARLAB</div>
+
+    <!-- three.js (global THREE object) -->
     <script src="./three.min.js"></script>
+    <!-- satellite.js for TLE propagation -->
     <script src="./satellite.min.js"></script>
+
     <script>
+      // --- TLE for your satellite (can be changed later) ---
+      const tleLine1 =
+        "1 98500U 14900A   25330.80204314  .00000000  00000-0 -98474-3 0    00";
+      const tleLine2 =
+        "2 98500  97.4398  36.4670 0001310  63.2710 283.1296 15.17672202    08";
 
-      const tleLine1 = '1 98500U 14900A   25330.80204314  .00000000  00000-0 -98474-3 0    00' ;
-      const tleLine2 = '2 98500  97.4398  36.4670 0001310  63.2710 283.1296 15.17672202    08';
+      // Show TLE in overlay
+      document.getElementById("tle-1").textContent = tleLine1;
+      document.getElementById("tle-2").textContent = tleLine2;
 
-      document.getElementById('tle-1').textContent = tleLine1;
-      document.getElementById('tle-2').textContent = tleLine2;
-
+      // Parse TLE with satellite.js
       const satrec = window.satellite.twoline2satrec(tleLine1, tleLine2);
 
+      // --- THREE.js scene setup ---
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x000000);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
 
+      // Narrower FOV for a nice SpaceX-like framing
       const camera = new THREE.PerspectiveCamera(
-        60,
+        35,
         window.innerWidth / window.innerHeight,
         1,
-        100000
+        300000
       );
 
-      const ambient = new THREE.AmbientLight(0x446688, 0.6);
+      // Lights
+      const ambient = new THREE.AmbientLight(0x223344, 0.8);
       const sunlight = new THREE.DirectionalLight(0xffffff, 1.2);
       sunlight.position.set(15000, 8000, 12000);
-      scene.add(ambient);
-      scene.add(sunlight);
+      scene.add(ambient, sunlight);
 
+      // --- Earth ---
       const earthRadiusKm = 6371;
       const earthGeometry = new THREE.SphereGeometry(earthRadiusKm, 96, 96);
-      const earthTexture = new THREE.TextureLoader().load('earth.jpg');
+      const earthTexture = new THREE.TextureLoader().load("earth.jpg");
       earthTexture.colorSpace = THREE.SRGBColorSpace;
-      const earthMaterial = new THREE.MeshPhongMaterial({ map: earthTexture });
-      const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-      scene.add(earth);
 
+      const earthMaterial = new THREE.MeshPhongMaterial({
+        map: earthTexture,
+        color: 0x9fc4ff, // slight bluish tint (SpaceX-style)
+      });
+
+      const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
+      scene.add(earthMesh);
+
+      // --- Starfield background (approximate, not real constellations) ---
+      const starRadius = earthRadiusKm * 18;
       const starsGeometry = new THREE.BufferGeometry();
-      const starCount = 1200;
-      const starPositions = new Float32Array(starCount * 3);
-      for (let i = 0; i < starCount; i += 1) {
-        const r = 40000 + Math.random() * 15000;
-        const theta = Math.random() * Math.PI * 2;
+      const starVertices = [];
+      const starCount = 4000;
+
+      for (let i = 0; i < starCount; i++) {
+        const theta = Math.random() * 2 * Math.PI;
         const phi = Math.acos(2 * Math.random() - 1);
+        const r = starRadius;
+
         const x = r * Math.sin(phi) * Math.cos(theta);
         const y = r * Math.sin(phi) * Math.sin(theta);
         const z = r * Math.cos(phi);
-        starPositions[i * 3] = x;
-        starPositions[i * 3 + 1] = y;
-        starPositions[i * 3 + 2] = z;
+
+        starVertices.push(x, y, z);
       }
-      starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-      const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 40, sizeAttenuation: false });
+
+      starsGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(starVertices, 3)
+      );
+
+      const starsMaterial = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 80,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.85,
+      });
+
       const starField = new THREE.Points(starsGeometry, starsMaterial);
       scene.add(starField);
 
-      let lastSafePosition = new THREE.Vector3(earthRadiusKm + 500, 0, 0);
+      // --- Satellite marker (small glowing sphere) ---
+      const satMarkerGeometry = new THREE.SphereGeometry(120, 16, 16);
+      const satMarkerMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffe066,
+      });
+      const satMarker = new THREE.Mesh(satMarkerGeometry, satMarkerMaterial);
+      scene.add(satMarker);
 
-      function updateCameraToSatellite(now = new Date()) {
-        const positionAndVelocity = window.satellite.propagate(satrec, now);
-        if (!positionAndVelocity.position) {
+      // 2D label element
+      const satLabelEl = document.getElementById("sat-label");
+
+      // --- Orbit path line ---
+      const orbitLineMaterial = new THREE.LineBasicMaterial({
+        color: 0x44aaff,
+        linewidth: 1,
+      });
+      const orbitLineGeometry = new THREE.BufferGeometry();
+      const orbitPoints = [];
+
+      const nowForOrbit = new Date();
+
+      // sample +/- 90 minutes around "now"
+      for (let i = -90; i <= 90; i++) {
+        const t = new Date(nowForOrbit.getTime() + i * 60 * 1000);
+        const p = propagateToEcf(t);
+        orbitPoints.push(p.x, p.y, p.z);
+      }
+
+      orbitLineGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(orbitPoints, 3)
+      );
+      const orbitLine = new THREE.Line(orbitLineGeometry, orbitLineMaterial);
+      scene.add(orbitLine);
+
+      // --- Conversion: TLE -> ECF position at given date ---
+      let lastSafePosition = new THREE.Vector3(0, 0, earthRadiusKm + 500);
+
+      function propagateToEcf(date) {
+        const pv = window.satellite.propagate(
+          satrec,
+          date.getUTCFullYear(),
+          date.getUTCMonth() + 1,
+          date.getUTCDate(),
+          date.getUTCHours(),
+          date.getUTCMinutes(),
+          date.getUTCSeconds()
+        );
+
+        if (!pv.position) {
           return lastSafePosition.clone();
         }
 
-        const gmst = window.satellite.gstime(now);
-        const positionEcf = window.satellite.eciToEcf(positionAndVelocity.position, gmst);
-        const currentPosition = new THREE.Vector3(
-          positionEcf.x,
-          positionEcf.y,
-          positionEcf.z
-        );
+        const gmst = window.satellite.gstime(date);
+        const ecf = window.satellite.eciToEcf(pv.position, gmst);
 
-        const distanceFromCenter = currentPosition.length();
-        const minimumDistance = earthRadiusKm + 120;
-        if (distanceFromCenter < minimumDistance) {
-          currentPosition.setLength(minimumDistance);
+        const pos = new THREE.Vector3(ecf.x, ecf.y, ecf.z);
+
+        // Clamp slightly above surface to avoid clipping
+        const distance = pos.length();
+        const minDistance = earthRadiusKm + 120;
+        if (distance < minDistance) {
+          pos.setLength(minDistance);
         }
 
-        lastSafePosition = currentPosition.clone();
-        return currentPosition;
+        lastSafePosition = pos.clone();
+        return pos;
       }
 
+      // --- Animation loop ---
       function animate() {
         requestAnimationFrame(animate);
 
-        const satellitePosition = updateCameraToSatellite();
-        camera.position.copy(satellitePosition);
+        const now = new Date();
+        const satPos = propagateToEcf(now);
+
+        // Move satellite marker to true position
+        satMarker.position.copy(satPos);
+
+        // Camera: stay on same radial line as satellite, but further out
+        const dir = satPos.clone().normalize();
+        const cameraDistance = earthRadiusKm * 3.0; // tweak 2.5–3.5 for taste
+        camera.position.copy(dir.multiplyScalar(cameraDistance));
         camera.up.set(0, 0, 1);
-        camera.lookAt(0, 0, 0);
+        camera.lookAt(0, 0, 0); // always look at Earth center
+
+        // Update 2D screen position of label
+        const projected = satMarker.position.clone().project(camera);
+        const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+
+        if (projected.z < 1) {
+          satLabelEl.style.display = "block";
+          satLabelEl.style.left = `${x}px`;
+          satLabelEl.style.top = `${y}px`;
+        } else {
+          // behind the camera
+          satLabelEl.style.display = "none";
+        }
 
         renderer.render(scene, camera);
       }
 
       animate();
 
-      window.addEventListener('resize', () => {
+      // --- Handle resize ---
+      window.addEventListener("resize", () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
