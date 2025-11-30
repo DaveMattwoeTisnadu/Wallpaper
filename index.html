@@ -67,12 +67,12 @@
       </p>
     </div>
 
+    <script src="./three.min.js"></script>
     <script src="./satellite.min.js"></script>
-    <script type="module">
-      import * as THREE from './three.module.min.js';
+    <script>
 
-      const tleLine1 = '1 25544U 98067A   24333.53058991  .00011717  00000-0  21506-3 0  9993';
-      const tleLine2 = '2 25544  51.6414 197.7605 0004522  72.4875 352.6617 15.50147303467554';
+      const tleLine1 = '1 98500U 14900A   25330.80204314  .00000000  00000-0 -98474-3 0    00' ;
+      const tleLine2 = '2 98500  97.4398  36.4670 0001310  63.2710 283.1296 15.17672202    08';
 
       document.getElementById('tle-1').textContent = tleLine1;
       document.getElementById('tle-2').textContent = tleLine2;
