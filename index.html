@@ -130,10 +130,32 @@
       // --- THREE.js scene setup ---
       const scene = new THREE.Scene();
 
+      const orbitLineMaterial = new THREE.LineBasicMaterial({
+        color: 0x6fb6ff,
+        linewidth: 1,
+      });
+
+      const orbitLineGeometry = new THREE.BufferGeometry();
+      const orbitSamples = 256; // number of points along the orbit
+
+      // allocate buffer once
+      const orbitPositions = new Float32Array(orbitSamples * 3);
+      orbitLineGeometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(orbitPositions, 3)
+      );
+
+      const orbitLine = new THREE.Line(orbitLineGeometry, orbitLineMaterial);
+      scene.add(orbitLine);
+
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
+
+      renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.2;
 
       // Narrower FOV for a nice SpaceX-like framing
       const camera = new THREE.PerspectiveCamera(
@@ -157,7 +179,7 @@
 
       const earthMaterial = new THREE.MeshPhongMaterial({
         map: earthTexture,
-        color: 0x9fc4ff, // slight bluish tint (SpaceX-style)
+        color: 0x9fc4ff,
         shininess: 18,
         specular: 0x222222,
       });
@@ -176,7 +198,7 @@
       scene.add(glow);
 
       // --- Starfield background (approximate, not real constellations) ---
-      const starRadius = earthRadiusKm * 18;
+      const starRadius = earthRadiusKm * 22;
       const starsGeometry = new THREE.BufferGeometry();
       const starVertices = [];
       const starCount = 4000;
@@ -204,6 +226,7 @@
         sizeAttenuation: true,
         transparent: true,
         opacity: 0.85,
+        depthWrite: false,
       });
 
       const starField = new THREE.Points(starsGeometry, starsMaterial);
@@ -255,34 +278,34 @@
         return pos;
       }
 
+      // Rebuild the orbit line around "now"
+      function rebuildOrbitLine() {
+        const now = new Date();
+        const orbitPeriodMinutes = 95; // approximate LEO period; good enough visually
+
+        for (let i = 0; i < orbitSamples; i++) {
+          const tMinutes = (i / (orbitSamples - 1)) * orbitPeriodMinutes;
+          const t = new Date(now.getTime() + tMinutes * 60 * 1000);
+          const p = propagateToEcf(t);
+
+          const idx = i * 3;
+          orbitPositions[idx + 0] = p.x;
+          orbitPositions[idx + 1] = p.y;
+          orbitPositions[idx + 2] = p.z;
+        }
+
+        orbitLineGeometry.attributes.position.needsUpdate = true;
+      }
+
       let smoothedSatPos = new THREE.Vector3();
       let firstFrame = true;
       const cameraDistance = earthRadiusKm * 3.5; // tweak 2.5–3.5 for taste
 
-      // --- Orbit path line (uses propagateToEcf, but is OUTSIDE the function) ---
-      const orbitLineMaterial = new THREE.LineBasicMaterial({
-        color: 0x44aaff,
-        linewidth: 1,
-      });
-      const orbitLineGeometry = new THREE.BufferGeometry();
-      const orbitPoints = [];
+      // initial build
+      rebuildOrbitLine();
 
-      const nowForOrbit = new Date();
-
-      // sample +/- 90 minutes around "now"
-      for (let i = -90; i <= 90; i++) {
-        const t = new Date(nowForOrbit.getTime() + i * 60 * 1000);
-        const p = propagateToEcf(t);
-        orbitPoints.push(p.x, p.y, p.z);
-      }
-
-      orbitLineGeometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(orbitPoints, 3)
-      );
-
-      const orbitLine = new THREE.Line(orbitLineGeometry, orbitLineMaterial);
-      scene.add(orbitLine);
+      // update every minute so the orbit stays in sync
+      setInterval(rebuildOrbitLine, 60 * 1000);
 
 
       // --- Animation loop ---
