@@ -104,7 +104,7 @@
 
     <div id="sat-label">
       <span class="icon">🛰</span>
-      <span class="name">6GSTARLAB</span>
+      <span class="name">6G STARLAB</span>
     </div>
     <div id="vignette"></div>
 
@@ -222,7 +222,7 @@
 
       const starsMaterial = new THREE.PointsMaterial({
         color: 0xffffff,
-        size: 80,
+        size: 100,
         sizeAttenuation: true,
         transparent: true,
         opacity: 0.85,
@@ -281,7 +281,7 @@
       // Rebuild the orbit line around "now"
       function rebuildOrbitLine() {
         const now = new Date();
-        const orbitPeriodMinutes = 95; // approximate LEO period; good enough visually
+        const orbitPeriodMinutes = 125; // approximate LEO period; good enough visually
 
         for (let i = 0; i < orbitSamples; i++) {
           const tMinutes = (i / (orbitSamples - 1)) * orbitPeriodMinutes;
@@ -305,7 +305,7 @@
       rebuildOrbitLine();
 
       // update every minute so the orbit stays in sync
-      setInterval(rebuildOrbitLine, 60 * 1000);
+      setInterval(rebuildOrbitLine, 1 * 1000);
 
 
       // --- Animation loop ---
