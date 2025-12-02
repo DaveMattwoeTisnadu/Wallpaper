@@ -174,15 +174,56 @@
       // --- Earth ---
       const earthRadiusKm = 6371;
       const earthGeometry = new THREE.SphereGeometry(earthRadiusKm, 96, 96);
-      const earthTexture = new THREE.TextureLoader().load("earth.jpg");
-      earthTexture.colorSpace = THREE.SRGBColorSpace;
+      const earthDayTexture = new THREE.TextureLoader().load("earth.jpg");
+      earthDayTexture.colorSpace = THREE.SRGBColorSpace;
+      const earthNightTexture = new THREE.TextureLoader().load("earth-night.jpg");
+      earthNightTexture.colorSpace = THREE.SRGBColorSpace;
 
-      const earthMaterial = new THREE.MeshPhongMaterial({
-        map: earthTexture,
-        color: 0x9fc4ff,
-        shininess: 18,
-        specular: 0x222222,
+      const earthMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uDayTex: { value: earthDayTexture },
+          uNightTex: { value: earthNightTexture },
+          uSunDir: { value: new THREE.Vector3() },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          varying vec3 vNormalWorld;
+
+          void main() {
+            vUv = uv;
+            vNormalWorld = normalize(mat3(modelMatrix) * normal);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D uDayTex;
+          uniform sampler2D uNightTex;
+          uniform vec3 uSunDir;
+
+          varying vec2 vUv;
+          varying vec3 vNormalWorld;
+
+          void main() {
+            vec3 dayColor = texture2D(uDayTex, vUv).rgb;
+            vec3 nightColor = texture2D(uNightTex, vUv).rgb;
+
+            // cosine of angle between surface normal and sun direction
+            float cosTheta = dot(normalize(vNormalWorld), normalize(uSunDir));
+
+            // Smooth blend around the terminator line
+            float dayFactor = smoothstep(-0.15, 0.15, cosTheta);
+            float nightFactor = 1.0 - dayFactor;
+
+            vec3 color = dayColor * dayFactor + nightColor * nightFactor;
+
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `,
       });
+
+      earthMaterial.uniforms.uSunDir.value
+        .copy(sunlight.position)
+        .normalize();
 
       const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
       scene.add(earthMesh);
@@ -347,6 +388,10 @@
           // behind the camera
           satLabelEl.style.display = "none";
         }
+
+        earthMaterial.uniforms.uSunDir.value
+          .copy(sunlight.position)
+          .normalize();
 
         renderer.render(scene, camera);
       }
